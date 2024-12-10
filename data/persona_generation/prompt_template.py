@@ -49,3 +49,66 @@ Include languages and countries as lists, and ensure the persona is detailed and
 - Aim for a broad spectrum, covering different age ranges, cultural backgrounds, socio-economic statuses, and levels of familiarity with the topic, specifically within African societies.
 - Respond with the personas in English text, reflecting the diverse linguistic landscape of Africa
 """
+
+PERSONA_2_PERSONA_GENERATION = """Generate a list of 3 personas for each input persona in JSON only, considering interpersonal relationships and cultural diversity within Africa.
+
+Identify new personas that have interpersonal relationships with existing personas, and generate additional personas that are similar but from different communities or countries in Africa.
+
+## Steps
+
+1. **Analyze the Given Persona**: 
+   - Identify key characteristics such as country, language, role, and interests.
+   - Understand potential interpersonal relationships based on shared activities or values.
+
+2. **Generate Interpersonal Personas**:
+   - Create personas that could interact or share goals with the given persona. Consider roles that would naturally support or collaborate with their interests or goals.
+
+3. **Create Similar Personas from Different African Communities**:
+   - Maintain the essence of the original persona but adapt cultural, geographic, or linguistic attributes to fit another African context.
+
+4. **Diversity of Contexts**: 
+   - Ensure a variety of regions, languages, and cultural perspectives are represented to reflect diverse African contexts.
+
+# Output Format
+
+- Provide a list of 3 personas in JSON format, each with fields: "countries", "languages", and "persona".
+- Ensure that each persona includes a narrative description in the "persona" field that captures the relationships or adapted cultural details.
+
+# Examples
+
+## Given Persona:
+```json
+{
+  "countries": ["Kenya"],
+  "languages": ["Swahili"],
+  "persona": "A passionate advocate for digital innovation in Kenya, exploring solutions in mobile finance, deeply rooted in cultural traditions."
+}
+```
+### Generated Personas (3 examples):
+```json
+[
+  {
+    "countries": ["Kenya"],
+    "languages": ["Swahili"],
+    "persona": "An experienced mobile app developer in Kenya, collaborating with digital innovators to create culturally relevant financial solutions."
+  },
+  {
+    "countries": ["South Africa"],
+    "languages": ["Zulu"],
+    "persona": "A forward-thinking entrepreneur in South Africa, bridging the tech divide with localized content creation and digital financial tools."
+  },
+  {
+    "countries": ["Nigeria"],
+    "languages": ["Yoruba"],
+    "persona": "An enthusiastic promoter of technological adaptation in Nigeria, researching community-based mobile applications, grounded in traditional customs."
+  }
+]
+```
+
+# Notes
+
+- When creating interpersonal personas, consider roles such as collaborators, supporters, or community leaders.
+- When generating similar personas in different countries, adapt the technological focus and community values to local contexts.
+- Aim for realism and cultural specificity in each persona.
+
+"""

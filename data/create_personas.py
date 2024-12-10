@@ -6,7 +6,6 @@ import asyncio
 import argparse
 import jsonlines
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
 from datasets import load_dataset
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -53,7 +52,6 @@ def batch_dataset_generator(dataset, batch_size):
 
 async def main(args):
     dataset = load_dataset(DATASET_NAME, f"20231101.{args.language}")
-    model = Generation_Models
 
     # create a text file for managing processed pages
     file_path = f"{args.data_directory}/{args.language}_processed_urls.txt"
@@ -66,12 +64,10 @@ async def main(args):
     
     # filter dataset to pages that have more than 1000 words
     dataset = dataset.filter(lambda x: len(x["text"].split()) > 500)
-
     print(f"Processing {len(dataset['train'])} pages")
 
     # Remove pages that have already been processed
     dataset = dataset.filter(lambda x: str(x["id"]) not in set(processed_pages))
-
     print(f"Processing {len(dataset['train'])} pages")
     
     with jsonlines.open(f"{args.data_directory}/{args.language}_personas.jsonl", "a") as writer, open(file_path, "a") as f:
@@ -80,14 +76,14 @@ async def main(args):
         for i, batch in tqdm(enumerate(batch_dataset_generator(dataset['train'], args.batch_size)), total=len(dataset)//args.batch_size):
             print(f"Processing batch {i}")
 
-            # results = await get_completion(batch['templated_prompt'], args.model, PersonaList)
-
-            results = await get_completion_azure_openai(batch['templated_prompt'], args.model, PersonaList)
+            if args.model == Generation_Models.AZURE_GPT4O:
+                results = await get_completion_azure_openai(batch['templated_prompt'], args.model, PersonaList)
+            else:
+                results = await get_completion(batch['templated_prompt'], args.model, PersonaList)
 
             for i, id, url, res in zip(range(len(batch)), batch["id"], batch["url"], results):
                 model_used = res.model
                 try:
-
                     for persona in res.generation['persona_list']:
                         writer.write({"id": id, "url": url, "persona": persona, "model": model_used})
                     f.write(f"{id}\n")

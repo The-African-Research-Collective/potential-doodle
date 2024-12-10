@@ -14,6 +14,7 @@ from tenacity import (
 )
 from litellm import acompletion, batch_completion
 from openai import AzureOpenAI
+from huggingface_hub import InferenceClient
 
 class Generation_Models(Enum):
     GPT4O = "gpt-4o-2024-08-06"
@@ -29,6 +30,19 @@ class Generation_Models(Enum):
 class ModelCompletion:
     generation: Dict[str, Any]
     model: str
+
+
+def json_parse_model_output(output: str) -> Dict[str, Any]:
+    
+    # Find the first opening bracket and remove everything before it
+    start = output.find("[")
+    output = output[start:]
+
+    # Find the last closing bracket and remove everything after it
+    end = output.rfind("]")
+    output = output[:end+1]
+
+    return json.loads(output)
 
 @retry(wait=wait_fixed(120), stop=stop_after_attempt(10))
 async def get_completion(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
@@ -90,7 +104,7 @@ async def get_completion(prompt: List[Dict[str, str]] | List[List[Dict[str, str]
     return completions
        
 
-@retry(wait=wait_fixed(120), stop=stop_after_attempt(10))
+@retry(wait=wait_fixed(20), stop=stop_after_attempt(5))
 async def get_completion_azure_openai(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
             model: Generation_Models,
             structured_object: Any,
@@ -109,7 +123,9 @@ async def get_completion_azure_openai(prompt: List[Dict[str, str]] | List[List[D
         response = client.chat.completions.create(
             model="MODEL_DEPLOYMENT_NAME",
             messages=message,
-            tools=tools
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
         try:
             return json.loads(response.choices[0].message.tool_calls[0].function.arguments)
@@ -129,4 +145,36 @@ async def get_completion_azure_openai(prompt: List[Dict[str, str]] | List[List[D
     return completions
 
     
+async def get_completion_tgi(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
+                        model: str,
+                        max_tokens: int = 512,
+                        temperature: float = 1.0,
+                        ) -> List[ModelCompletion]:
+    
+    client = InferenceClient("http://localhost:8080")
+
+    def llm_inference(message):
+        response = client.chat_completion(
+            messages=message,
+            seed=42,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        try:
+            return json_parse_model_output(response.choices[0].message.content)
+        except json.JSONDecodeError:
+            return [{}]
+
+    completions = []
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(llm_inference, message) for message in prompt]
+        for future in futures:
+            response = future.result()
+            try:
+                completions.append(ModelCompletion(generation=response, model=model))
+            except json.JSONDecodeError:
+                raise ValueError(f"Error decoding response")
+    
+    return completions
+
 
