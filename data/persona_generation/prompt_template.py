@@ -47,4 +47,5 @@ Include languages and countries as lists, and ensure the persona is detailed and
 
 - Consider both direct and indirect interests, such as professionals in related fields or laypeople with hobbies connected to the topic.
 - Aim for a broad spectrum, covering different age ranges, cultural backgrounds, socio-economic statuses, and levels of familiarity with the topic, specifically within African societies.
+- Respond with the personas in English text, reflecting the diverse linguistic landscape of Africa
 """
