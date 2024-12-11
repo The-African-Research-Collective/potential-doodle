@@ -62,7 +62,7 @@ async def main(args):
 
                 f.write(f"{persona['id']}\n")
                 
-            time.sleep(1)
+            time.sleep(5)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create personas")

@@ -44,7 +44,7 @@ def json_parse_model_output(output: str) -> Dict[str, Any]:
 
     return json.loads(output)
 
-@retry(wait=wait_fixed(120), stop=stop_after_attempt(10))
+@retry(wait=wait_fixed(120), stop=stop_after_attempt(3))
 async def get_completion(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
             model: Generation_Models,
             structured_object: Any,
@@ -104,7 +104,7 @@ async def get_completion(prompt: List[Dict[str, str]] | List[List[Dict[str, str]
     return completions
        
 
-@retry(wait=wait_fixed(20), stop=stop_after_attempt(5))
+@retry(wait=wait_fixed(20), stop=stop_after_attempt(3))
 async def get_completion_azure_openai(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
             model: Generation_Models,
             structured_object: Any,
@@ -144,7 +144,7 @@ async def get_completion_azure_openai(prompt: List[Dict[str, str]] | List[List[D
     
     return completions
 
-    
+@retry(wait=wait_fixed(20), stop=stop_after_attempt(3))    
 async def get_completion_tgi(prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
                         model: str,
                         max_tokens: int = 512,

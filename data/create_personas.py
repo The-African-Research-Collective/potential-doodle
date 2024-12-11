@@ -5,6 +5,7 @@ import time
 import asyncio
 import argparse
 import jsonlines
+import tenacity
 from pydantic import BaseModel
 from datasets import load_dataset
 from tqdm import tqdm
@@ -76,19 +77,25 @@ async def main(args):
         for i, batch in tqdm(enumerate(batch_dataset_generator(dataset['train'], args.batch_size)), total=len(dataset)//args.batch_size):
             print(f"Processing batch {i}")
 
-            if args.model == Generation_Models.AZURE_GPT4O:
-                results = await get_completion_azure_openai(batch['templated_prompt'], args.model, PersonaList)
-            else:
-                results = await get_completion(batch['templated_prompt'], args.model, PersonaList)
+            try:
 
-            for i, id, url, res in zip(range(len(batch)), batch["id"], batch["url"], results):
-                model_used = res.model
-                try:
-                    for persona in res.generation['persona_list']:
-                        writer.write({"id": id, "url": url, "persona": persona, "model": model_used})
-                    f.write(f"{id}\n")
-                except KeyError:
-                    print(f"Error processing {id} with model {model_used}")
+                if args.model == Generation_Models.AZURE_GPT4O:
+                    results = await get_completion_azure_openai(batch['templated_prompt'], args.model, PersonaList)
+                else:
+                    results = await get_completion(batch['templated_prompt'], args.model, PersonaList)
+
+                for i, id, url, res in zip(range(len(batch)), batch["id"], batch["url"], results):
+                    model_used = res.model
+                    try:
+                        for persona in res.generation['persona_list']:
+                            writer.write({"id": id, "url": url, "persona": persona, "model": model_used})
+                        f.write(f"{id}\n")
+                    except KeyError:
+                        print(f"Error processing {id} with model {model_used}")
+
+            except tenacity.RetryError:
+                print(f"Error processing batch {i}")
+                continue
             
             time.sleep(10)
 
