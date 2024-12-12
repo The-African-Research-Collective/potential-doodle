@@ -1,0 +1,10 @@
+model_name_or_path: meta-llama/Llama-3.2-1B
+model_revision: main
+dataset_name: dummy
+exp_name: None
+run_name: None
+seed: 42
+report_to:
+  - wandb
+  - tensorboard
+gradient_accumulation_steps: 1
