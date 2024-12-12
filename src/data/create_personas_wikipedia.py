@@ -1,6 +1,9 @@
 """
 """
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import time
 import asyncio
 import argparse
@@ -11,13 +14,11 @@ from datasets import load_dataset
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from persona_generation.prompt_template import PERSONA_GENERATION
-
+from src.data.persona_generation.prompt_template import PERSONA_GENERATION
 from src.llms.base import Generation_Models, ModelProvider
 from src.llms.litellm_client import LiteLLM
 from src.llms.azure_client import AzureOPENAILLM
 from src.llms.tgi_inference_client import TGI_client
-
 
 load_dotenv()
 
@@ -91,7 +92,7 @@ async def main(args):
 
             try:
 
-                results = await llm.completion(batch['templated_prompt'], args.model, PersonaList)
+                results = await llm.completion(batch['templated_prompt'], PersonaList)
 
                 for i, id, url, res in zip(range(len(batch)), batch["id"], batch["url"], results):
                     model_used = res.model
@@ -112,7 +113,7 @@ async def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_directory", type=str, default="files")
+    parser.add_argument("--data_directory", type=str, default="files/wikipedia_personas")
     parser.add_argument("--language", type=str)
     parser.add_argument("--batch_size", type=int, default=10)
     parser.add_argument("--model", type=Generation_Models, choices=list(Generation_Models))

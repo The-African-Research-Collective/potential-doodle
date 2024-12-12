@@ -14,7 +14,7 @@ from tenacity import (
     wait_fixed,
 )
 from openai import AzureOpenAI
-from base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
+from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
 
 load_dotenv()
 
@@ -32,7 +32,7 @@ class AzureOPENAILLM(BaseLLM):
             api_version=os.getenv("AZURE_API_VERSION")
             )
     
-    @retry(wait=wait_fixed(120), stop=stop_after_attempt(3))
+    @retry(wait=wait_fixed(60), stop=stop_after_attempt(3))
     async def completion(
             self,
             prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
@@ -51,16 +51,18 @@ class AzureOPENAILLM(BaseLLM):
             tools = None
         
         def llm_inference(message: List[Dict[str, str]]):
-            response = self.client.chat.completions.create(
-                model="MODEL_DEPLOYMENT_NAME",
-                messages=message,
-                tools=tools,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
             try:
+                response = self.client.chat.completions.create(
+                    model="MODEL_DEPLOYMENT_NAME",
+                    messages=message,
+                    tools=tools,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
                 return json.loads(response.choices[0].message.tool_calls[0].function.arguments)
             except TypeError as e:
+                return {}
+            except openai.BadRequestError as e:
                 return {}
         
         completions = []
@@ -68,11 +70,8 @@ class AzureOPENAILLM(BaseLLM):
             futures = [executor.submit(llm_inference, message) for message in prompt]
             for future in futures:
                 response = future.result()
-                try:
-                    completions.append(ModelCompletion(generation=response,
+                completions.append(ModelCompletion(generation=response,
                                             model=self.model_name.value))
-                except json.JSONDecodeError:
-                    raise ValueError(f"Error decoding response")
         
         return completions
 

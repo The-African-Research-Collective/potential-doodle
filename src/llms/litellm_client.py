@@ -12,7 +12,7 @@ from tenacity import (
     stop_after_attempt,
     wait_fixed,
 )
-from base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
+from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
 
 load_dotenv()
 

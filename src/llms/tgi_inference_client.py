@@ -14,8 +14,8 @@ from tenacity import (
     wait_fixed,
 )
 from huggingface_hub import InferenceClient
-from base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
-from utils import json_parse_model_output
+from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
+from src.llms.utils import json_parse_model_output
 
 load_dotenv()
 

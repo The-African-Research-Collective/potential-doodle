@@ -25,7 +25,6 @@ class Generation_Models(Enum):
 class ModelProvider(Enum):
     OPENAI = "openai"
     AZURE = "azure"
-    HUGGINGFACE = "huggingface"
     TGI = "tgi"
     ANTHROPIC = "anthropic"
     COHERE = "cohere"
