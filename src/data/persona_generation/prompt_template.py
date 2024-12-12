@@ -120,39 +120,11 @@ A 40-year-old IT consultant and hobbyist programmer who appreciates the humorous
 An example of a verifiable instruction in Yoruba could be:
 Aha ndị na-atọ ụtọ maka mgbasa ozi mmekọrịta. Nke mbụ, megharịa arịrịọ ahụ n'enweghị mgbanwe, wee nye azịza gị (ekwula ihe ọ bụla tupu ịmeghachi arịrịọ ahụ; arịrịọ ịchọrọ ịmeghachi anaghị agụnye ahịrịokwu a)
 
-# An example of a verifiable instruction in Yoruba could be:
-# Aha ndị na-atọ ụtọ maka mgbasa ozi mmekọrịta. Nke mbụ, megharịa arịrịọ ahụ n'enweghị mgbanwe, wee nye azịza gị (ekwula ihe ọ bụla tupu ịmeghachi arịrịọ ahụ; arịrịọ ịchọrọ ịmeghachi anaghị agụnye ahịrịokwu a)
-
-# Note:
-# 1. The above example is not tied to any particular persona, but you should create one that is unique and specific to the given persona.
-# 2. The instruction should contain all the verifiable contraint(s)
-# 3. Your output should start with "User instruction:" your output should not include the answer to the instruction
-# 4. Your output should be provided in a language that can be associated persona
-# 5. For languages that need diacritization, ensure that the returned prompt contains the right diacritics
-# 6. Provide the prompt JSON format, each with fields: "promot", "language"
-"""
-
-
-"""
-Create a  prompt  that a given user persona that is a native speaker of Yoruba might ask you to do relating to a particular topic of interest
-
-An example of a  instruction in Igbo  could be:
-Aha ndị na-atọ ụtọ maka mgbasa ozi mmekọrịta. Nke mbụ, megharịa arịrịọ ahụ n'enweghị mgbanwe, wee nye azịza gị (ekwula ihe ọ bụla tupu ịmeghachi arịrịọ ahụ; arịrịọ ịchọrọ ịmeghachi anaghị agụnye ahịrịokwu a)
-
 Note:
 1. The above example is not tied to any particular persona, but you should create one that is unique and specific to the given persona.
 2. The instruction should contain all the verifiable contraint(s)
 3. Your output should start with "User instruction:" your output should not include the answer to the instruction
-<<<<<<< HEAD
-4. Your output should be in the provided language
-5. For languages that need diacritization, ensure that the returned prompt contains the right diacritics
-6. Provide the prompt JSON format, each with fields: "prompt", "language"
-
-Persona: A passionate advocate for digital innovation in Kenya, exploring solutions in mobile finance, deeply rooted in cultural traditions.
-Language: Swahili
-Domain: Historical figures and events
 4. Your output should be provided in a language that can be associated persona
 5. For languages that need diacritization, ensure that the returned prompt contains the right diacritics
 6. Provide the prompt JSON format, each with fields: "prompt", "language"
->>>>>>> 8537652 (update llm clients and data gen script)
 """
