@@ -50,13 +50,18 @@ def _load_personas():
         personas_list = list(reader)
     return personas_list
 
-def _build_prompt_message(seed_prompt: str, seed_language: str, persona: str, subdomain: str, target_domain: str, language: str):
+def _build_prompt_message(seed_prompt: str, seed_language: str, persona: str, subdomain: str, target_domain: str, language: str, model_name: Generation_Models):
+    
     system_prompt = PROMPT_GENERATION.replace("{seed_language}", seed_language).replace("{seed_prompt}", seed_prompt)
     user_prompt = f"""Persona: {persona['persona']['persona']}
 Domain: {subdomain}
 Style: {target_domain}
 Language: {language}"""
-    return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    
+    if model_name in [Generation_Models.TGI_GEMINI_9B]:
+        return [{"role": "user", "content": system_prompt +"\n\n"+ user_prompt}]
+    else:
+        return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
     
 
 async def main(args):
@@ -69,7 +74,7 @@ async def main(args):
     if args.model == Generation_Models.AZURE_GPT4O:
         llm = AzureOPENAILLM(model_name=args.model)
     elif args.model in [Generation_Models.TGI_GEMINI_9B]:
-        llm = TGI_client(model_name=args.model)
+        llm = TGI_client(model_name=args.model, model_provider=args.model_provider)
     else:
         llm = LiteLLM(model_name=args.model, model_provider=args.model_provider)
 
@@ -82,7 +87,7 @@ async def main(args):
         sampled_seed_prompt = random.choice(seed_prompts_list)
         sample_persona = random.choice(persona_list)
 
-        prompt = _build_prompt_message(sampled_seed_prompt['prompt'], sampled_seed_prompt['language'], sample_persona, "chemistry", target_domain, language)
+        prompt = _build_prompt_message(sampled_seed_prompt['prompt'], sampled_seed_prompt['language'], sample_persona, "chemistry", target_domain, language, args.model)
     
         print(prompt)
 

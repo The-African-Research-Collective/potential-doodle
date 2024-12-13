@@ -33,11 +33,9 @@ class PersonaList(BaseModel):
     persona_list: list[Persona]
 
 def prompt_processor(example):
-
     # get the first 200 words of the text
     text = example["text"].split()[:200]
     text = " ".join(text)
-
     prompt = [ {"role": "system", "content": PERSONA_GENERATION, "cache_control": {"type": "ephemeral"}}, 
               {"role": "user", "content": text}]
     
@@ -46,13 +44,10 @@ def prompt_processor(example):
 
 
 def batch_dataset_generator(dataset, batch_size):
-
     # Create prompt
     dataset = dataset.map(prompt_processor)
-
     # Shuffle the dataset
     dataset = dataset.shuffle()
-
     for i in range(0, len(dataset), batch_size):
         yield dataset[i:i+batch_size]
 
@@ -117,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("--language", type=str)
     parser.add_argument("--batch_size", type=int, default=10)
     parser.add_argument("--model", type=Generation_Models, choices=list(Generation_Models))
-    parser.add_argument("--model_provider", type=str, choices=list(ModelProvider), required=False)
+    parser.add_argument("--model_provider", type=ModelProvider, choices=list(ModelProvider), required=False)
     args = parser.parse_args()
 
     asyncio.run(main(args))

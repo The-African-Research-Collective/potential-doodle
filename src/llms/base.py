@@ -17,6 +17,8 @@ class Generation_Models(Enum):
     CLAUDE_HAIKU = "claude-3-haiku-20240307"
     AZURE_GPT4O = "azure_ai/newgpt4o"
     TGI_GEMINI_9B = "gemma-2-9b-it"
+    TOGETHER_LLAMA70B = "together_ai/meta-llama/Llama-3-70b-chat-hf"
+    TOGETHER_GEMMA27B = "together_ai/google/Gemma-2-7b-chat-hf"
     MOCK = "mock_llm"
 
     def __repr__(self):
@@ -28,6 +30,7 @@ class ModelProvider(Enum):
     TGI = "tgi"
     ANTHROPIC = "anthropic"
     COHERE = "cohere"
+    TOGETHER = "together"
     MOCK = "mock"
 
 
@@ -60,6 +63,9 @@ class BaseLLM:
         elif self.model_provider == ModelProvider.TGI:
             assert os.getenv("TGI_ENDPOINT"), \
                 "TGI_ENDPOINT environment variable not set"
+        elif self.model_provider == ModelProvider.TOGETHER:
+            assert os.getenv("TOGETHERAI_API_KEY"), \
+                "TOGETHERAI_API_KEY environment variable not set"
         elif self.model_provider == ModelProvider.MOCK:
             pass
         else:

@@ -12,6 +12,7 @@ from tenacity import (
     stop_after_attempt,
     wait_fixed,
 )
+from src.llms.utils import json_parse_model_output
 from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
 
 load_dotenv()
@@ -19,7 +20,7 @@ load_dotenv()
 class LiteLLM(BaseLLM):
     def __init__(self,
             model_name: Generation_Models,
-            model_provider:ModelProvider):
+            model_provider: ModelProvider):
         super().__init__(model_name)
         self.model_provider = model_provider
         self._check_environment_variables()
@@ -41,19 +42,26 @@ class LiteLLM(BaseLLM):
 
         try:
             if isinstance(prompt[0], list):
+
                 response = batch_completion(
                     model=self.model_name.value,
                     messages=prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    response_format=structured_object
+                    response_format=structured_object,
+                    drop_params=True
                 )
                 
                 for model_resp in response:
                     try:
-                        completions.append(
-                            ModelCompletion(generation=json.loads(model_resp.choices[0].message.content),
-                            model=self.model_name.value))
+                        if self.model_provider ==  ModelProvider.TOGETHER:
+                            completions.append(
+                                ModelCompletion(generation=json_parse_model_output(model_resp.choices[0].message.content),
+                                model=self.model_name.value))
+                        else:
+                            completions.append(
+                                ModelCompletion(generation=json.loads(model_resp.choices[0].message.content),
+                                model=self.model_name.value))
                     except json.JSONDecodeError:
                         raise ValueError(f"Error decoding response: {model_resp.choices[0].message.content}")
 
@@ -63,13 +71,19 @@ class LiteLLM(BaseLLM):
                     messages=prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    response_format=structured_object
+                    response_format=structured_object,
+                    drop_params=True
                 )
 
                 try:
-                    completions.append(
-                        ModelCompletion(generation=json.loads(response.choices[0].message.content),
-                                        model=self.model_name.value))
+                    if self.model_provider ==  ModelProvider.TOGETHER:
+                        completions.append(
+                                ModelCompletion(generation=json_parse_model_output(model_resp.choices[0].message.content),
+                                model=self.model_name.value))
+                    else:
+                        completions.append(
+                            ModelCompletion(generation=json.loads(model_resp.choices[0].message.content),
+                            model=self.model_name.value))
                 except json.JSONDecodeError:
                     raise ValueError(f"Error decoding response: {response.choices[0].message.content}")
 

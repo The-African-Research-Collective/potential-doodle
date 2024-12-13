@@ -50,6 +50,7 @@ class TGI_client(BaseLLM):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
             try:
                 return json_parse_model_output(response.choices[0].message.content)
             except json.JSONDecodeError:
