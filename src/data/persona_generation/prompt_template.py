@@ -110,6 +110,7 @@ Identify new personas that have interpersonal relationships with existing person
 - When creating interpersonal personas, consider roles such as collaborators, supporters, or community leaders.
 - When generating similar personas in different countries, adapt the technological focus and community values to local contexts.
 - Aim for realism and cultural specificity in each persona.
+- Generate only one JSON object
 
 """
 

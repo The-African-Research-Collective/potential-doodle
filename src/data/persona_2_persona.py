@@ -9,10 +9,12 @@ import time
 import asyncio
 import argparse
 import jsonlines
+import functools
 from typing import Dict, List
 
 from tqdm import tqdm
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 from src.data.persona_generation.prompt_template import PERSONA_2_PERSONA_GENERATION
 from src.llms.base import Generation_Models, ModelProvider
@@ -22,16 +24,30 @@ from src.llms.tgi_inference_client import TGI_client
 
 load_dotenv()
 
-def prompt_processor(row: Dict):
-    prompt = [ {"role": "user", "content": PERSONA_2_PERSONA_GENERATION + f"\n\n{json.dumps(row['persona'])}"}]
+class Persona(BaseModel):
+  countries: list[str]
+  languages: list[str]
+  persona: str
+
+class PersonaList(BaseModel):
+    persona_list: list[Persona]
+
+def prompt_processor(row: Dict, model_name: Generation_Models):
+
+    if model_name == Generation_Models.TGI_GEMINI_9B:
+        prompt = [ {"role": "user", "content": PERSONA_2_PERSONA_GENERATION + f"\n\n{json.dumps(row['persona'])}"}]
+    else:
+        prompt = [
+            {"role": "system", "content": PERSONA_2_PERSONA_GENERATION, "cache_control": {"type": "ephemeral"}},
+            {"role": "user", "content": json.dumps(row['persona'])}
+        ]
     
     row['templated_prompt'] = prompt
     return row
 
-def batch_dataset_generator(dataset: List[Dict], batch_size):
-
+def batch_dataset_generator(dataset: List[Dict], batch_size: int, model_name: Generation_Models):
     # Create prompt
-    dataset = list(map(prompt_processor, dataset))
+    dataset = list(map(functools.partial(prompt_processor, model_name=model_name), dataset))
 
     for i in range(0, len(dataset), batch_size):
         yield dataset[i:i+batch_size]
@@ -66,10 +82,14 @@ async def main(args):
     dataset = [row for row in dataset if row['id'] not in processed_pages]
 
     with jsonlines.open(f"{args.data_directory}/persona_2_persona/{args.language}_personas.jsonl", "a") as writer, open(file_path, "a") as f:
-        for i, batch in tqdm(enumerate(batch_dataset_generator(dataset, args.batch_size)), total=len(dataset)//args.batch_size):
+        for i, batch in tqdm(enumerate(batch_dataset_generator(dataset, args.batch_size, args.model)), total=len(dataset)//args.batch_size):
             batch_persona = [row['templated_prompt'] for row in batch]
+
             try:
-                completions = await llm.completion(batch_persona, **generation_kwargs)
+                if isinstance(llm, TGI_client):
+                    completions = await llm.completion(batch_persona, **generation_kwargs)
+                else:
+                    completions = await llm.completion(batch_persona, PersonaList, **generation_kwargs)
 
                 for i, persona in enumerate(batch):
                     for completion in completions[i].generation:

@@ -2,6 +2,7 @@ import os
 import json
 import openai
 import asyncio
+import litellm
 
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
@@ -16,6 +17,11 @@ from src.llms.utils import json_parse_model_output
 from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProvider
 
 load_dotenv()
+litellm.suppress_debug_info = True
+litellm.set_verbose=False
+
+import warnings
+warnings.filterwarnings("ignore")
 
 class LiteLLM(BaseLLM):
     def __init__(self,
@@ -51,7 +57,7 @@ class LiteLLM(BaseLLM):
                     response_format=structured_object,
                     drop_params=True
                 )
-                
+
                 for model_resp in response:
                     try:
                         if self.model_provider ==  ModelProvider.TOGETHER:

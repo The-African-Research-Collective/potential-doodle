@@ -10,6 +10,7 @@ import time
 import logging
 import datasets
 import transformers
+import torch
 
 from datetime import timedelta
 from dataclasses import dataclass, field
@@ -19,118 +20,21 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from datasets import load_dataset
 
-from transformers import AutoConfig
+from transformers import (AutoConfig,
+                          AutoTokenizer,
+                          BitsAndBytesConfig,
+                          AutoModelForCausalLM,
+                          LlamaTokenizer,
+                          LlamaTokenizerFast,
+                          GPTNeoXTokenizerFast,
+                          GPT2Tokenizer,
+                          OPTForCausalLM)
 
 from utils import ArgumentParserPlus, mix_datasets
+from training_args import ExperimentArguments, ModelArguments, DatasetArguments
 
 logger = get_logger(__name__)
 
-@dataclass
-class DatasetArguments:
-    """
-    Arguments for dataset configuration.
-    """
-    dataset_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "The name of the huggingface dataset to use, the expectation is that this is an existing dataset mixture"}
-    )
-    dataset_config_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "The configuration name of the dataset to use"}
-    )
-    dataset_mixer: Optional[dict] = field(
-        default=None, metadata={"help": "A dictionary of datasets (local or HF) to sample from."}
-    )
-    dataset_mixer_list: Optional[list[str]] = field(
-        default=None, metadata={"help": "A list of datasets (local or HF) to sample from."}
-    )
-    dataset_mix_dir: Optional[str] = field(
-        default=None, metadata={"help": "The directory to save the mixed dataset to disk."}
-    )
-    train_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "The path to the training file"}
-    )
-
-@dataclass
-class ModelArguments:
-    """
-    Arguments for model configuration.
-    """
-    model_name_or_path: str = field(
-        metadata={"help": "The model checkpoint for weights initialization."}
-    )
-    model_revision: str = field(
-        default="main",
-        metadata={"help": "The version of the model on huggingface to use"}
-    )
-    config_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "The model configuration to use, it is usually a model name"}
-    )
-    trust_remote_code: Optional[bool] = field(
-        default=True,
-        metadata={"help": "Whether to trust remote code"}
-    )
-
-@dataclass
-class ExperimentArguments:
-    """
-    Arguments for experiment configuration.
-    """
-    exp_name: str = field(
-        metadata={"help": "The name of the experiment"}
-    )
-    run_name: str = field(
-        default=None,
-        metadata={"help": "The name of the run"}
-    )
-    push_to_hub: bool = field(
-        default=False,
-        metadata={"help": "Whether to push the model to the hub"}
-    )
-    output_dir: Optional[str] = field(
-        default=None,
-        metadata={"help": "The output directory to save the model and logs"}
-    )
-    with_tracking: bool = field(
-        default=False,
-        metadata={"help": "Whether to enable experiment trackers for logging."},
-    )
-    gradient_accumulation_steps: int = field(
-        default=1,
-        metadata={"help": "The number of gradient accumulation steps to use."},
-    )
-    report_to: Union[str, List[str]] = field(
-        default="all",
-        metadata={
-            "help": "The integration(s) to report results and logs to. "
-            "Can be a single string or a list of strings. "
-            "Options are 'tensorboard', 'wandb', 'comet_ml', 'clearml', or 'all'. "
-            "Specify multiple by listing them: e.g., ['tensorboard', 'wandb']"
-        },
-    )
-    hf_repo_id: Optional[str] = field(
-        default=None,
-        metadata={"help": "The huggingface repository id to push the model to"}
-    )
-    hf_entity: Optional[str] = field(
-        default=None,
-        metadata={"help": "The huggingface entity to push the model to"}
-    )
-    seed: Optional[int] = field(
-        default=42,
-        metadata={"help": "The seed to use for the run"}
-    )
-    reports_to: Optional[List[str]] = field(
-        default="wandb",
-        metadata={"help": "The service to report to"}
-    )
-    timeout: Optional[int] = field(
-        default=600,
-        metadata={"help": "The timeout for the run"}
-    )
-    
 
 def main(args: ArgumentParserPlus):
 
@@ -240,7 +144,106 @@ def main(args: ArgumentParserPlus):
             revision=model_args.model_revision,
             trust_remote_code=model_args.trust_remote_code,
         )
-        
+    else:
+        raise ValueError("You need to specify either a model name or a model configuration name")
+    
+    # load tokenizer
+    tokenizer_revision = model_args.tokenizer_revision if model_args.tokenizer_revision else model_args.model_revision
+    if tokenizer_revision != model_args.model_revision:
+        # Warn user if tokenizer and model use different revisions; this is an unusual
+        # use case.
+        warning = f"""Requested tokenizer revision `{tokenizer_revision}` is different
+                   from the model revision `{model_args.model_revision}`."""
+        logger.warning(warning)
+
+    if model_args.tokenizer_name:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name,
+            revision=tokenizer_revision,
+            trust_remote_code=model_args.trust_remote_code,
+            use_fast=not model_args.use_slow_tokenizer,
+        )
+    elif model_args.model_name_or_path:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            revision=tokenizer_revision,
+            trust_remote_code=model_args.trust_remote_code,
+            use_fast=not model_args.use_slow_tokenizer,
+        )
+    else:
+        raise ValueError("You need to specify either a tokenizer name or a model name")
+
+    if model_args.model_name_or_path:
+        if model_args.use_qlora:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+            device_index = accelerator.local_process_index
+            device_map = {"": device_index}  # force data-parallel training.
+            model = AutoModelForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                revision=model_args.model_revision,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                trust_remote_code=model_args.trust_remote_code,
+                quantization_config=quantization_config,
+                device_map=device_map,
+                torch_dtype=torch.bfloat16,
+                attn_implementation="flash_attention_2" if exp_args.use_flash_attention else "eager",
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                revision=model_args.model_revision,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                trust_remote_code=model_args.trust_remote_code,
+                attn_implementation="flash_attention_2" if exp_args.use_flash_attention else "eager",
+            )
+    else:
+        logger.info("Training from scratch, no weights or quantization needed")
+        model = AutoModelForCausalLM.from_config(config)
+    
+    # no default pad token for llama!
+    # here we add all special tokens again, because the default ones are not in the special_tokens_map
+    if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, LlamaTokenizerFast):
+        num_added_tokens = tokenizer.add_special_tokens(
+            {
+                "bos_token": "<s>",
+                "eos_token": "</s>",
+                "unk_token": "<unk>",
+                "pad_token": "<pad>",
+            }
+        )
+        assert num_added_tokens in [
+            0,
+            1,
+        ], "LlamaTokenizer should only add one special token - the pad_token, or no tokens if pad token present."
+    elif isinstance(tokenizer, GPTNeoXTokenizerFast):
+        # OLMo newer models use this tokenizer
+        if tokenizer.bos_token is None:
+            tokenizer.bos_token = tokenizer.eos_token
+            assert (
+                args.add_bos
+            ), "For OLMo with GPTNeoX, you must add bos token to the beginning of the input sequence."
+        # else, pythia / other models
+        else:
+            num_added_tokens = tokenizer.add_special_tokens(
+                {
+                    "pad_token": "<pad>",
+                }
+            )
+            assert num_added_tokens == 1, "GPTNeoXTokenizer should only add one special token - the pad_token."
+    elif isinstance(tokenizer, GPT2Tokenizer) and isinstance(model, OPTForCausalLM):
+        num_added_tokens = tokenizer.add_special_tokens({"unk_token": "<unk>"})
+    elif isinstance(tokenizer, transformers.PreTrainedTokenizerFast) and tokenizer.pad_token is None:
+        num_added_tokens = tokenizer.add_special_tokens({"pad_token": "<pad>"})
+        assert num_added_tokens == 1, "We detected no padding token but add_special_tokens did not add one."
+
+
 
 
 if __name__ == "__main__":

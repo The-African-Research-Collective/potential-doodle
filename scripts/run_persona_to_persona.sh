@@ -3,12 +3,41 @@
 # Define variables for better maintainability
 PYTHON_SCRIPT="src/data/persona_2_persona.py"
 LANGUAGE="sw"
-MODEL="gemma-2-9b-it"
-PROVIDER="tgi"
+MODEL="together_ai/meta-llama/Llama-3-8b-chat-hf"
+PROVIDER="together"
 BATCH_SIZE=8
 MAX_TOKENS=512
 TEMPERATURE=1.0
 DATA_DIR="files/wikipedia_personas/"
+
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --data_directory=*)
+            DATA_DIR="${1#*=}"
+            ;;
+        --language=*)
+            LANGUAGE="${1#*=}"
+            ;;
+        --batch_size=*)
+            BATCH_SIZE="${1#*=}"
+            ;;
+        --model=*)
+            MODEL="${1#*=}"
+            ;;
+        --model_provider=*)
+            PROVIDER="${1#*=}"
+            ;;
+        --batch_size=*)
+            BATCH_SIZE="${1#*=}"
+            ;;
+        *)
+            echo "Unknown parameter: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 # Print run parameters
 echo "=== Please verify the following parameters ==="
