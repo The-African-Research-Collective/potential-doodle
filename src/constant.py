@@ -5,15 +5,15 @@ TARGET_LANGUAGES = [
     "IGBO",
     "HAUSA",
     "ZULU",
-    "SOMALI`",
+    "SOMALI",
     "NIGERIAN PIDGIN",
     "ARABIC"
 ]
 
 
 TARGET_DOMAINS = [
-    "TRANSLATION",
     "MATHEMATICS",
+    "SCIENCE",
     "INFORMATION_SEEKING",
     "REASONING",
     "PLANNING",
@@ -95,6 +95,15 @@ SUBDOMAINS = [
     "Natural hair care",
     "Community organizing",
     "Outdoor activities",
-   " Market analysis",
-   " Legal rights awareness",
+   "Market analysis",
+   "Legal rights awareness",
+   "African literature (oral and written traditions)",
+   "Poetry and storytelling",
+   "Parenting advice",
+   "Artificial intelligence and machine learning",
+   "Physics",
+   "Chemistry",
+    "Biology",
+    "Physical Fitness",
+
 ]

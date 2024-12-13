@@ -77,7 +77,7 @@ async def main(args):
         processed_pages = []
     
     # filter dataset to pages that have more than 1000 words
-    dataset = dataset.filter(lambda x: len(x["text"].split()) > 500)
+    dataset = dataset.filter(lambda x: len(x["text"].split()) > 100)
     print(f"Processing {len(dataset['train'])} pages")
 
     # Remove pages that have already been processed

@@ -9,10 +9,8 @@ import time
 import asyncio
 import argparse
 import jsonlines
-from pydantic import BaseModel
 from typing import Dict, List
 
-from datasets import load_dataset
 from tqdm import tqdm
 from dotenv import load_dotenv
 
