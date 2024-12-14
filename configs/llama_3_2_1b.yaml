@@ -1,6 +1,6 @@
 model_name_or_path: meta-llama/Llama-3.2-1B
 model_revision: main
-dataset_name: dummy
+dataset_name: allenai/tulu-3-sft-personas-instruction-following
 exp_name: None
 run_name: None
 seed: 42
@@ -8,3 +8,6 @@ report_to:
   - wandb
   - tensorboard
 gradient_accumulation_steps: 1
+use_flash_attention: False
+chat_template_name: llama_3_instruct
+max_train_samples: 100

@@ -18,7 +18,8 @@ class Generation_Models(Enum):
     AZURE_GPT4O = "azure_ai/newgpt4o"
     TGI_GEMINI_9B = "gemma-2-9b-it"
     TOGETHER_LLAMA70B = "together_ai/meta-llama/Llama-3-70b-chat-hf"
-    TOGETHER_GEMMA27B = "together_ai/google/Gemma-2-7b-chat-hf"
+    TOGETHER_GEMMA27B = "together_ai/google/gemma-2-27b-it"
+    TOGETHER_GEMMA9B = "together_ai/google/gemma-2-9b-it"
     TOGETHER_LLAMA8B = "together_ai/meta-llama/Llama-3-8b-chat-hf"
     MOCK = "mock_llm"
 

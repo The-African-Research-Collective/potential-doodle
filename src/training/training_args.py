@@ -6,6 +6,10 @@ class DatasetArguments:
     """
     Arguments for dataset configuration.
     """
+    chat_template_name: str = field(
+        default=None,
+        metadata={"help": "The name of the chat template to use"}
+    )
     dataset_name: Optional[str] = field(
         default=None,
         metadata={"help": "The name of the huggingface dataset to use, the expectation is that this is an existing dataset mixture"}
@@ -27,6 +31,47 @@ class DatasetArguments:
         default=None,
         metadata={"help": "The path to the training file"}
     )
+    preprocessing_num_workers: Optional[int] = field(
+        default=8,
+        metadata={"help": "The number of workers to use for processing the dataset"}
+    )
+    max_seq_length: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The maximum total input sequence length after tokenization. "
+                "Sequences longer than this will be truncated,"
+            )
+        },
+    )
+    overwrite_cache: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
+
+    def __post_init__(self):
+
+        if (
+                self.dataset_name is None
+                and self.train_file is None
+                and self.dataset_mixer is None
+                and self.dataset_mixer_list is None
+            ):
+                raise ValueError("Need either a dataset name, dataset mixer, or a training file.")
+        else:
+            if self.train_file is not None:
+                extension = self.train_file.split(".")[-1]
+                assert extension in ["json", "jsonl"], "`train_file` should be a json or a jsonl file."
+        if (
+            (self.dataset_name is not None and (self.dataset_mixer is not None or self.dataset_mixer_list is not None))
+            or (self.dataset_name is not None and self.train_file is not None)
+            or (
+                (self.dataset_mixer is not None or self.dataset_mixer_list is not None) and self.train_file is not None
+            )
+            or (self.dataset_mixer is not None and self.dataset_mixer_list is not None)
+        ):
+            raise ValueError("Cannot provide two dataset selection mechanisms.")
+    
 
 @dataclass
 class ModelArguments:
@@ -60,9 +105,33 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to use a slow tokenizer"}
     )
+    use_lora: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to use the LORA training"}
+    )
+    lora_rank: Optional[int] = field(
+        default=64,
+        metadata={"help": "The rank of the LORA model"}
+    )
+    lora_alpha: Optional[float] = field(
+        default=16,
+        metadata={"help": "The alpha parameter of lora."},
+    )
+    lora_dropout: Optional[float] = field(
+        default=0.1,
+        metadata={"help": "The dropout rate of lora modules."},
+    )
     use_qlora: Optional[bool] = field(
         default=False,
-        metadata={"help": "Whether to use the qlora tokenizer"}
+        metadata={"help": "Whether to use the qlora training"}
+    )
+    add_bos_token: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to add a beginning of sentence token"}
+    )
+    gradient_checkpointing: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to use gradient checkpointing"}
     )
 
 @dataclass
@@ -76,6 +145,10 @@ class ExperimentArguments:
     run_name: str = field(
         default=None,
         metadata={"help": "The name of the run"}
+    )
+    project_name: str = field(
+        default=None,
+        metadata={"help": "The name of the project"}
     )
     push_to_hub: bool = field(
         default=False,
@@ -93,6 +166,25 @@ class ExperimentArguments:
         default=1,
         metadata={"help": "The number of gradient accumulation steps to use."},
     )
+    output_dir: str = field(
+        default="output/",
+        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+    )
+    per_device_train_batch_size: int = field(
+        default=8,
+        metadata={"help": "Batch size per GPU/TPU core/CPU for training."},
+    )
+    lr_scheduler_type: str = field(
+        default="linear",
+        metadata={
+            "help": "The scheduler type to use for learning rate adjustment.",
+            "choices": ["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"],
+        },
+    )
+    num_train_epochs: int = field(
+        default=2,
+        metadata={"help": "Total number of training epochs to perform."},
+    )
     report_to: Union[str, List[str]] = field(
         default="all",
         metadata={
@@ -101,6 +193,60 @@ class ExperimentArguments:
             "Options are 'tensorboard', 'wandb', 'comet_ml', 'clearml', or 'all'. "
             "Specify multiple by listing them: e.g., ['tensorboard', 'wandb']"
         },
+    )
+    use_8bit_optimizer: bool = field(
+        default=False,
+        metadata={"help": "Use 8bit optimizer from bitsandbytes. Not compatible with deepspeed."},
+    )
+    warmup_ratio: float = field(
+        default=0.03,
+        metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."},
+    )
+    weight_decay: float = field(
+        default=0.0,
+        metadata={"help": "Weight decay for AdamW if we apply some."},
+    )
+    timeout: int = field(
+        default=1800,
+        metadata={
+            "help": "Timeout for the training process in seconds."
+            "Useful if tokenization process is long. Default is 1800 seconds (30 minutes)."
+        },
+    )
+    learning_rate: float = field(
+        default=5e-5,
+        metadata={"help": "The initial learning rate for AdamW."},
+    )
+    reduce_loss: str = field(
+        default="mean",
+        metadata={
+            "help": "How to reduce loss over tokens. Options are 'mean' or 'sum'."
+            "Using 'sum' can improve chat model performance."
+        },
+    )
+    overwrite_output_dir: bool = field(
+        default=False,
+        metadata={
+            "help": "Overwrite the content of the output directory. Means that resumption will always start from scratch."
+        },
+    )
+    keep_last_n_checkpoints: int = field(
+        default=3,
+        metadata={"help": "How many checkpoints to keep in the output directory. -1 for all."},
+    )
+    fused_optimizer: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to use fused AdamW or not.",
+        },
+    )
+    wandb_entity: Optional[str] = field(
+        default=None,
+        metadata={"help": "Entity to use for logging to wandb."},
+    )
+    resume_from_checkpoint: Optional[str] = field(
+        default=None,
+        metadata={"help": "If the training should continue from a checkpoint folder."},
     )
     hf_repo_id: Optional[str] = field(
         default=None,
@@ -126,3 +272,22 @@ class ExperimentArguments:
         default=True,
         metadata={"help": "Whether to use flash attention"}
     )
+    max_train_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "If set, overrides the number of training steps. Otherwise, num_train_epochs is used."},
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "If set, overrides the number of training samples. Otherwise, the dataset size is used."},
+    )
+    checkpointing_steps: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Whether the various states should be saved at the end of every n steps, or 'epoch' for each epoch."  # noqa
+        },
+    )
+
+    def __post_init__(self):
+        if self.reduce_loss not in ["mean", "sum"]:
+            raise ValueError("reduce_loss must be either 'mean' or 'sum'")
+    

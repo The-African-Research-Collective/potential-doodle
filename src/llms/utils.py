@@ -23,3 +23,5 @@ def json_parse_model_output(output: str) -> Dict[str, Any]:
     output = output[:end-start+1]
 
     return json.loads(output)
+
+CHAT_TEMPLATES=[]
