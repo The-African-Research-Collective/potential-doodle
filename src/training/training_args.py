@@ -35,6 +35,10 @@ class DatasetArguments:
         default=8,
         metadata={"help": "The number of workers to use for processing the dataset"}
     )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "If set, overrides the number of training samples. Otherwise, the dataset size is used."},
+    )
     max_seq_length: Optional[int] = field(
         default=None,
         metadata={
@@ -240,9 +244,17 @@ class ExperimentArguments:
             "help": "Whether to use fused AdamW or not.",
         },
     )
+    clip_grad_norm: float = field(
+        default=-1,
+        metadata={"help": "Clip gradient norm. Not compatible with deepspeed (use deepspeed config instead)."},
+    )
     wandb_entity: Optional[str] = field(
         default=None,
         metadata={"help": "Entity to use for logging to wandb."},
+    )
+    wandb_project_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "Project name to use for logging to wandb."},
     )
     resume_from_checkpoint: Optional[str] = field(
         default=None,
@@ -255,6 +267,10 @@ class ExperimentArguments:
     hf_entity: Optional[str] = field(
         default=None,
         metadata={"help": "The huggingface entity to push the model to"}
+    )
+    hf_repo_revision: Optional[str] = field(
+        default=None,
+        metadata={"help": "The huggingface repository revision to push the model to"}
     )
     seed: Optional[int] = field(
         default=42,
@@ -276,16 +292,33 @@ class ExperimentArguments:
         default=None,
         metadata={"help": "If set, overrides the number of training steps. Otherwise, num_train_epochs is used."},
     )
-    max_train_samples: Optional[int] = field(
-        default=None,
-        metadata={"help": "If set, overrides the number of training samples. Otherwise, the dataset size is used."},
-    )
     checkpointing_steps: Optional[str] = field(
         default=None,
         metadata={
             "help": "Whether the various states should be saved at the end of every n steps, or 'epoch' for each epoch."  # noqa
         },
     )
+    load_balancing_loss: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Whether to include a load balancing loss used in mixture of experts training.",
+        },
+    )
+    load_balancing_weight: Optional[float] = field(
+        default=0.5,
+        metadata={
+            "help": "The weight of the load balancing loss used in mixture of experts training.",
+        },
+    )
+    logging_steps: Optional[int] = field(
+        default=500,
+        metadata={"help": "Log every n steps."},
+    )
+    save_steps: Optional[int] = field(
+        default=500,
+        metadata={"help": "Save checkpoint every n steps."},
+    )
+    
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:

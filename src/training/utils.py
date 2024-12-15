@@ -1,14 +1,21 @@
 import os
 import sys
+import json
 import dataclasses
+import shutil
+from accelerate import Accelerator
 
+from tenacity import retry, stop_after_attempt, wait_fixed
+from huggingface_hub import HfApi
 from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
 from dataclasses import dataclass, fields
 from typing import List, Optional, Union, Tuple, Any, NewType
 from transformers import HfArgumentParser
 from datasets.builder import DatasetGenerationError
+from accelerate.logging import get_logger
 
 DataClassType = NewType("DataClassType", Any)
+logger = get_logger(__name__)
 
 
 class ArgumentParserPlus(HfArgumentParser):
@@ -430,3 +437,95 @@ CHAT_TEMPLATES = {
 {% endif %}
 """
 }
+
+# ----------------------------------------------------------------------------
+# Check pointing utilities
+def get_last_checkpoint(folder: str, incomplete: bool = False) -> Optional[str]:
+    content = os.listdir(folder)
+    checkpoint_steps = [path for path in content if path.startswith("step_")]
+    checkpoint_epochs = [path for path in content if path.startswith("epoch_")]
+    if len(checkpoint_steps) > 0 and len(checkpoint_epochs) > 0:
+        logger.info("Mixed step and epoch checkpoints found. Using step checkpoints.")
+        checkpoints = checkpoint_steps
+    elif len(checkpoint_steps) == 0:
+        checkpoints = checkpoint_epochs
+    else:
+        checkpoints = checkpoint_steps
+    if not incomplete:
+        checkpoints = [path for path in checkpoints if os.path.exists(os.path.join(folder, path, "COMPLETED"))]
+    if len(checkpoints) == 0:
+        return
+    return os.path.join(folder, max(checkpoints, key=lambda x: x.split("_")[-1]))
+
+
+def get_last_checkpoint_path(args, incomplete: bool = False) -> str:
+    # if output already exists and user does not allow overwriting, resume from there.
+    # otherwise, resume if the user specifies a checkpoint.
+    # else, start from scratch.
+    # if incomplete is true, include folders without "COMPLETE" in the folder.
+    last_checkpoint_path = None
+    if args.output_dir and os.path.isdir(args.output_dir) and not args.overwrite_output_dir:
+        last_checkpoint_path = get_last_checkpoint(args.output_dir, incomplete=incomplete)
+        if last_checkpoint_path is None:
+            logger.warning("Output directory exists but no checkpoint found. Starting from scratch.")
+    elif args.resume_from_checkpoint:
+        last_checkpoint_path = args.resume_from_checkpoint
+    return last_checkpoint_path
+
+def is_checkpoint_folder(dir: str, folder: str) -> bool:
+    return (folder.startswith("step_") or folder.startswith("epoch_")) and os.path.isdir(os.path.join(dir, folder))
+
+def clean_last_n_checkpoints(output_dir: str, keep_last_n_checkpoints: int) -> None:
+    # remove the last checkpoint to save space
+    folders = [f for f in os.listdir(output_dir) if is_checkpoint_folder(output_dir, f)]
+    # find the checkpoint with the largest step
+    checkpoints = sorted(folders, key=lambda x: int(x.split("_")[-1]))
+    if keep_last_n_checkpoints != -1 and len(checkpoints) > keep_last_n_checkpoints:
+        for checkpoint in checkpoints[: len(checkpoints) - keep_last_n_checkpoints]:
+            logger.info(f"Removing checkpoint {checkpoint}")
+            shutil.rmtree(os.path.join(output_dir, checkpoint))
+    logger.info("Remaining files:" + str(os.listdir(output_dir)))
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(10))
+def upload_metadata_to_hf(
+    metadata_dict,
+    filename,
+    hf_dataset_name,
+    hf_dataset_save_dir,
+):
+    # upload a random dict to HF. Originally for uploading metadata to HF
+    # about a model for leaderboard displays.
+    with open("tmp.json", "w") as f:
+        json.dump(metadata_dict, f)
+    api = HfApi()
+    api.upload_file(
+        path_or_fileobj="tmp.json",
+        path_in_repo=f"{hf_dataset_save_dir}/{filename}",
+        repo_id=hf_dataset_name,
+        repo_type="dataset",
+    )
+    os.remove("tmp.json")
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(10))
+def push_folder_to_hub(
+    accelerator: Accelerator,
+    output_dir: str,
+    hf_repo_id: Optional[str] = None,
+    hf_repo_revision: Optional[str] = None,
+    private: bool = True,
+):
+    if accelerator.is_main_process:
+        hf_repo_url = f"https://huggingface.co/{hf_repo_id}/tree/{hf_repo_revision}"
+        api = HfApi()
+        if not api.repo_exists(hf_repo_id):
+            api.create_repo(hf_repo_id, exist_ok=True, private=private)
+        if hf_repo_revision is not None:
+            api.create_branch(repo_id=hf_repo_id, branch=hf_repo_revision, exist_ok=True)
+        api.upload_folder(
+            repo_id=hf_repo_id,
+            revision=hf_repo_revision,
+            folder_path=output_dir,
+            commit_message="upload checkpoint",
+            run_as_future=False,
+        )
+        print(f"🔥 pushed to {hf_repo_url}")

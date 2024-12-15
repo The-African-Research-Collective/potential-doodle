@@ -15,6 +15,7 @@ import deepspeed
 import functools
 import random
 import math
+import json
 
 from datetime import timedelta
 from dataclasses import dataclass, field
@@ -36,8 +37,16 @@ from transformers import (AutoConfig,
                           OPTForCausalLM,
                           get_scheduler,)
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from utils import ArgumentParserPlus, mix_datasets, CHAT_TEMPLATES
+from utils import (ArgumentParserPlus,
+                   mix_datasets,
+                   CHAT_TEMPLATES,
+                   get_last_checkpoint_path,
+                   clean_last_n_checkpoints,
+                   upload_metadata_to_hf,
+                   push_folder_to_hub)
+from model_utils import save_with_accelerate
 from training_args import ExperimentArguments, ModelArguments, DatasetArguments
 
 logger = get_logger(__name__)
@@ -120,7 +129,7 @@ def main(args: ArgumentParserPlus):
 
     exp_args, model_args, data_args = args[0], args[1], args[2]
 
-    print(exp_args)
+    exp_args.output_dir = os.path.join(exp_args.output_dir, exp_args.exp_name)
 
     exp_args.run_name = f"{exp_args.exp_name}__{exp_args.seed}__{int(time.time())}"
     if exp_args.push_to_hub:
@@ -380,8 +389,8 @@ def main(args: ArgumentParserPlus):
     
     train_dataset = dataset["train"]
     # debugging tool for fewer samples
-    if exp_args.max_train_samples is not None:
-        max_train_samples = min(len(train_dataset), exp_args.max_train_samples)
+    if data_args.max_train_samples is not None:
+        max_train_samples = min(len(train_dataset), data_args.max_train_samples)
         logger.info(f"Limiting training samples to {max_train_samples} from {len(train_dataset)}.")
         train_dataset = train_dataset.select(range(max_train_samples))
     
@@ -418,20 +427,20 @@ def main(args: ArgumentParserPlus):
     optimizer_grouped_parameters = [
         {
             "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
+            "weight_decay": exp_args.weight_decay,
         },
         {
             "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
             "weight_decay": 0.0,
         },
     ]
-    if args.use_qlora:
+    if model_args.use_qlora:
         from bitsandbytes.optim import AdamW
 
         optimizer = AdamW(
             optimizer_grouped_parameters,
             lr=exp_args.learning_rate,
-            optim_bits=8 if args.use_8bit_optimizer else 32,
+            optim_bits=8 if exp_args.use_8bit_optimizer else 32,
             is_paged=True,
         )
     else:
@@ -439,9 +448,9 @@ def main(args: ArgumentParserPlus):
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    if args.max_train_steps is None:
-        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / exp_args.gradient_accumulation_steps)
+    if exp_args.max_train_steps is None:
+        exp_args.max_train_steps = exp_args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
     
     # Create the learning rate scheduler.
@@ -486,16 +495,21 @@ def main(args: ArgumentParserPlus):
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if exp_args.with_tracking:
-        experiment_config = vars(args)
+        experiment_config = vars(exp_args)
+        dataset_args = vars(data_args)
+        model_args = vars(model_args)
+
+        all_config = {**experiment_config, **dataset_args, **model_args}
+
         # TensorBoard cannot log Enums, need the raw value
         experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"]
 
-        if args.wandb_entity is None:
+        if exp_args.wandb_entity is None:
             raise ValueError("Please provide a wandb entity.")
 
         accelerator.init_trackers(
-            exp_args.project_name,
-            experiment_config,
+            exp_args.wandb_project_name,
+            all_config,
             init_kwargs={
                 "wandb": {
                     "name": exp_args.run_name,
@@ -507,8 +521,226 @@ def main(args: ArgumentParserPlus):
         wandb_tracker = accelerator.get_tracker("wandb")
     
     # Train!
-    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+    total_batch_size = exp_args.per_device_train_batch_size * accelerator.num_processes * exp_args.gradient_accumulation_steps
+    logger.info("***** Running training *****")
+    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num Epochs = {exp_args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per device = {exp_args.per_device_train_batch_size}")
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(f"  Gradient Accumulation steps = {exp_args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {exp_args.max_train_steps}")
+    # Only show the progress bar once on each machine.
+    progress_bar = tqdm(range(exp_args.max_train_steps), disable=not accelerator.is_local_main_process)
+    completed_steps = 0
+    starting_epoch = 0
 
+    # Potentially load in the weights and states from a previous save
+    last_checkpoint_path = get_last_checkpoint_path(exp_args)
+    if last_checkpoint_path:
+        accelerator.print(f"Resumed from checkpoint: {last_checkpoint_path}")
+        accelerator.load_state(last_checkpoint_path)
+        # Extract `epoch_{i}` or `step_{i}`
+        last_checkpoint_path = os.path.basename(last_checkpoint_path)
+        training_difference = os.path.splitext(last_checkpoint_path)[0]
+
+        if "epoch" in training_difference:
+            starting_epoch = int(training_difference.replace("epoch_", "")) + 1
+            resume_step = None
+            completed_steps = starting_epoch * num_update_steps_per_epoch
+        else:
+            # need to multiply `gradient_accumulation_steps` to reflect real steps
+            resume_step = int(training_difference.replace("step_", "")) * exp_args.gradient_accumulation_steps
+            starting_epoch = resume_step // len(train_dataloader)
+            completed_steps = resume_step // exp_args.gradient_accumulation_steps
+            resume_step -= starting_epoch * len(train_dataloader)
+    
+    print(f"Starting from epoch {starting_epoch} and step {completed_steps}.")
+    # update the progress_bar if load from checkpoint
+    progress_bar.update(completed_steps)
+
+    local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
+    total_token_including_padding = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
+    #TODO: Count multilingual tokens
+
+    start_time = time.time()
+
+    for epoch in range(starting_epoch, exp_args.num_train_epochs):
+        model.train()
+        train_dataloader.set_epoch(epoch)
+        total_loss = 0
+        total_aux_loss = 0
+
+        if last_checkpoint_path and resume_step is not None:
+            # We skip the first `n` batches in the dataloader when resuming from a checkpoint
+            active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
+        else:
+            active_dataloader = train_dataloader
+
+        for step, batch in enumerate(active_dataloader):
+            local_total_tokens += batch["attention_mask"].sum()
+            total_token_including_padding += batch["attention_mask"].numel()
+            with accelerator.accumulate(model):
+                if exp_args.load_balancing_loss:
+                    outputs = model(**batch, use_cache=False, output_router_logits=True)
+                else:
+                    outputs = model(**batch, use_cache=False)
+                if exp_args.reduce_loss == "mean":
+                    loss = outputs.loss
+                else:
+                    # reduce loss is sum
+                    # this ensures that we weight all tokens in the dataset equally,
+                    # rather than weighting each overall example equally when
+                    # using high amounts of gradient accumulation.
+                    # this can result in > 5 point improvements in AlpacaEval
+                    # see https://github.com/huggingface/transformers/issues/24725 for
+                    # more discussion and details.
+                    logits = outputs.logits
+                    labels = batch["labels"]
+                    # Shift so that tokens < n predict n
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    shift_labels = labels[..., 1:].contiguous()
+                    # Flatten the tokens
+                    loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
+                    shift_logits = shift_logits.view(-1, embedding_size)
+                    shift_labels = shift_labels.view(-1)
+                    # Enable model parallelism
+                    shift_labels = shift_labels.to(shift_logits.device)
+                    loss = loss_fct(shift_logits, shift_labels)
+                    if exp_args.load_balancing_loss:
+                        aux_loss = exp_args.load_balancing_weight * outputs.aux_loss
+                        loss += aux_loss
+
+                # We keep track of the loss at each logged step
+                total_loss += loss.detach().float()
+                accelerator.backward(loss)
+                if exp_args.load_balancing_loss:
+                    total_aux_loss += aux_loss.detach().float()
+
+                # clip gradient norm. don't do this with deepspeed
+                if accelerator.sync_gradients and exp_args.clip_grad_norm > 0:
+                    accelerator.clip_grad_norm_(model.parameters(), exp_args.clip_grad_norm)
+
+                optimizer.step()
+                optimizer.zero_grad()
+                lr_scheduler.step()
+            
+            if accelerator.sync_gradients:
+                progress_bar.update(1)
+                completed_steps += 1
+                if exp_args.logging_steps and completed_steps % exp_args.logging_steps == 0:
+                    avg_loss = (
+                        accelerator.gather(total_loss).mean().item()
+                        / exp_args.gradient_accumulation_steps
+                        / exp_args.logging_steps
+                    )
+                    total_tokens = accelerator.gather(local_total_tokens).sum().item()
+                    total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
+                    metrics_to_log = {
+                        "learning_rate": lr_scheduler.get_last_lr()[0],
+                        "train_loss": avg_loss,
+                        "total_tokens": total_tokens,
+                        "per_device_tps": total_tokens / accelerator.num_processes / (time.time() - start_time),
+                        "total_tokens_including_padding": total_tokens_including_padding,
+                        "per_device_tps_including_padding": total_tokens_including_padding
+                        / accelerator.num_processes
+                        / (time.time() - start_time),
+                    }
+                    if exp_args.load_balancing_loss:
+                        avg_aux_loss = (
+                            accelerator.gather(total_aux_loss).mean().item()
+                            / exp_args.gradient_accumulation_steps
+                            / exp_args.logging_steps
+                        )
+                        logger.info(
+                            f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, Aux Loss: {avg_aux_loss}, TPS: {total_tokens / (time.time() - start_time)}"
+                        )
+                        metrics_to_log["aux_loss"] = avg_aux_loss
+                    else:
+                        logger.info(
+                            f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
+                        )
+                    if exp_args.with_tracking:
+                        accelerator.log(
+                            metrics_to_log,
+                            step=completed_steps,
+                        )
+                    total_loss = 0
+                    total_aux_loss = 0
+
+                if completed_steps >= exp_args.max_train_steps:
+                    break
+
+        if checkpointing_steps == "epoch":
+            output_dir = f"epoch_{epoch}"
+            if exp_args.output_dir is not None:
+                output_dir = os.path.join(exp_args.output_dir, output_dir)
+            accelerator.save_state(output_dir)
+            # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
+            with open(os.path.join(get_last_checkpoint_path(exp_args, incomplete=True), "COMPLETED"), "w") as f:
+                f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+            if accelerator.is_local_main_process:
+                clean_last_n_checkpoints(exp_args.output_dir, exp_args.keep_last_n_checkpoints)
+            accelerator.wait_for_everyone()
+
+    if exp_args.output_dir is not None:
+        save_with_accelerate(
+            accelerator,
+            model,
+            tokenizer,
+            exp_args.output_dir,
+            exp_args.use_lora,
+        )
+
+    # remove all checkpoints to save space
+    if accelerator.is_local_main_process:
+        clean_last_n_checkpoints(exp_args.output_dir, keep_last_n_checkpoints=0)
+
+    if accelerator.is_main_process:
+        # dpo script only supports these two options right now for datasets
+        if data_args.dataset_mixer:
+            dataset_list = list(data_args.dataset_mixer.keys())
+        elif data_args.dataset_mixer_list:
+            dataset_list = data_args.dataset_mixer_list[::2]  # even indices
+        elif data_args.dataset_name:
+            dataset_list = [data_args.dataset_name]
+        else:
+            dataset_list = [data_args.train_file]
+
+        # mainly just focussing here on what would be useful for the leaderboard.
+        # wandb will have even more useful information.
+        metadata_blob = {
+            "model_name": exp_args.exp_name,
+            "model_type": "sft",
+            "datasets": dataset_list,
+            "base_model": exp_args.model_name_or_path,
+            "wandb_path": wandb_tracker.run.get_url(),
+        }
+        # save metadata to the output directory. then it should also get pushed to HF.
+        with open(os.path.join(exp_args.output_dir, "metadata.json"), "w") as f:
+            json.dump(metadata_blob, f)
+
+        # upload metadata to the dataset if set
+        if exp_args.hf_metadata_dataset:
+            upload_metadata_to_hf(
+                metadata_blob,
+                "metadata.json",
+                exp_args.hf_metadata_dataset,
+                "results/" + exp_args.run_name,  # to match what the auto-evals name as.
+            )
+
+    if exp_args.push_to_hub:
+        push_folder_to_hub(
+            accelerator,
+            exp_args.output_dir,
+            exp_args.hf_repo_id,
+            exp_args.hf_repo_revision,
+        )
+
+    accelerator.wait_for_everyone()
+    if exp_args.with_tracking:
+        accelerator.end_training()
+
+        
 
 
 if __name__ == "__main__":
