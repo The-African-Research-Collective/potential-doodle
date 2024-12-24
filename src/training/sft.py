@@ -497,9 +497,9 @@ def main(args: ArgumentParserPlus):
     if exp_args.with_tracking:
         experiment_config = vars(exp_args)
         dataset_args = vars(data_args)
-        model_args = vars(model_args)
+        modelling_args = vars(model_args)
 
-        all_config = {**experiment_config, **dataset_args, **model_args}
+        all_config = {**experiment_config, **dataset_args, **modelling_args}
 
         # TensorBoard cannot log Enums, need the raw value
         experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"]
@@ -688,7 +688,7 @@ def main(args: ArgumentParserPlus):
             model,
             tokenizer,
             exp_args.output_dir,
-            exp_args.use_lora,
+            model_args.use_lora,
         )
 
     # remove all checkpoints to save space
@@ -712,7 +712,7 @@ def main(args: ArgumentParserPlus):
             "model_name": exp_args.exp_name,
             "model_type": "sft",
             "datasets": dataset_list,
-            "base_model": exp_args.model_name_or_path,
+            "base_model": model_args.model_name_or_path,
             "wandb_path": wandb_tracker.run.get_url(),
         }
         # save metadata to the output directory. then it should also get pushed to HF.

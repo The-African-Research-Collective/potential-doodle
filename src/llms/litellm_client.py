@@ -31,7 +31,7 @@ class LiteLLM(BaseLLM):
         self.model_provider = model_provider
         self._check_environment_variables()
     
-    @retry(wait=wait_fixed(120), stop=stop_after_attempt(3))
+    @retry(wait=wait_fixed(20), stop=stop_after_attempt(10))
     async def completion(
             self,
             prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
