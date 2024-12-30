@@ -40,23 +40,34 @@ def main(args):
     for file in persona_files:
 
         num_lines = sum(1 for line in open(os.path.join(args.data_directory, file)))
-
+        print(f"Processing File: {file} with {num_lines} lines")
         with jsonlines.open(os.path.join(args.data_directory, file), "r") as reader,jsonlines.open(os.path.join(args.data_directory, "deduplicated_personas.jsonl"), "a") as writer:
-            for row in tqdm(reader, total=num_lines):
-                row['shingles'] = create_shingles(row['persona'], args.shingle_size)
-                row['minhash'] = create_hash(row['shingles'])
+            for i, row in tqdm(enumerate(reader), total=num_lines):
+                row['id'] = row['id']+'#'+str(i)
 
-                lsh.insert(row['id'], row['minhash'])
+                if row['persona']:
+                    if isinstance(row['persona'], str):
+                        row['shingles'] = create_shingles(row['persona'], args.shingle_size)
+                    elif isinstance(row['persona'], dict) and 'persona' in row['persona']:
+                        if isinstance(row['persona']['persona'], str):
+                            row['shingles'] = create_shingles(row['persona']['persona'], args.shingle_size)
+                        else:
+                            continue
+                    else:
+                        continue
 
-                result = lsh.query(row['minhash'])
+                    minhash = create_hash(row['shingles'])
 
-                if len(result) == 1:
-                    writer.write(row)
+                    lsh.insert(row['id'], minhash)
+
+                    result = lsh.query(minhash)
+
+                    if len(result) == 1:
+                        writer.write(row)
 
     
 if __name__ == "__main__":
     args = argparse.ArgumentParser("Deduplicate Generate Personas")
-    args.add_argument("--language", type=str, help="Language code")
     args.add_argument("--data_directory", type=str, help="Data directory")
     args.add_argument("--shingle_size", type=int, default=3, help="Shingle size")
     args.add_argument("--threshold", type=float, default=0.8, help="Threshold")

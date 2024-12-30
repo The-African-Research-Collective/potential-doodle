@@ -18,6 +18,7 @@ from src.llms.base import BaseLLM, ModelCompletion, Generation_Models, ModelProv
 
 load_dotenv()
 
+
 class AzureOPENAILLM(BaseLLM):
     def __init__(self,
             model_name: Generation_Models = Generation_Models.AZURE_GPT4O,
@@ -27,12 +28,13 @@ class AzureOPENAILLM(BaseLLM):
         self._check_environment_variables()
 
         self.client  = AzureOpenAI(
-            azure_endpoint = os.getenv("AZURE_ENDPOINT"), 
+            azure_endpoint = os.getenv("AZURE_API_BASE"), 
             api_key=os.getenv("AZURE_API_KEY"),  
             api_version=os.getenv("AZURE_API_VERSION")
             )
+
     
-    @retry(wait=wait_fixed(60), stop=stop_after_attempt(3))
+    @retry(wait=wait_fixed(10), stop=stop_after_attempt(3))
     async def completion(
             self,
             prompt: List[Dict[str, str]] | List[List[Dict[str, str]]],
@@ -41,6 +43,7 @@ class AzureOPENAILLM(BaseLLM):
             ) -> List[ModelCompletion]:
         
         """
+        Generate completions for the given prompt using the model.
         """
         temperature = generation_kwargs.get("temperature", 1.0)
         max_tokens = generation_kwargs.get("max_tokens", 512)
@@ -53,7 +56,7 @@ class AzureOPENAILLM(BaseLLM):
         def llm_inference(message: List[Dict[str, str]]):
             try:
                 response = self.client.chat.completions.create(
-                    model="MODEL_DEPLOYMENT_NAME",
+                    model="newgpt4o",
                     messages=message,
                     tools=tools,
                     temperature=temperature,

@@ -164,3 +164,4 @@ cython_debug/
 test.py
 files/*
 llm_data/*
+.DS_Store

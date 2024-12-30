@@ -127,3 +127,23 @@ Note:
 5. Your output should be in the provided language
 6. Provide the prompt JSON format, each with fields: "prompt", "language"
 """
+
+MATH_PROBLEM_GENERATION = """Create a math problem that a given user persona, who is a native speaker of a given language, might ask you to solve. Ensure the problem requires between 2 and 8 steps to solve, and the solution involves performing a sequence of elementary calculations using basic arithmetic operations (+, −, ×, ÷) to reach the final answer.
+
+An example of a math problem in {seed_language} could be:
+
+{seed_prompt}
+
+Note:
+1. You should make full use of the persona description to create the math problem to ensure that the math problem is unique and specific to the persona.
+2. Each math problem created should require between 2 and 8 steps to solve, involving elementary calculations using only basic arithmetic operations.
+3. Your response should not include a solution to the created math problem.
+4. Provide the prompt JSON format, each with fields: "prompt", "language"
+5. Your output should be in the provided language
+"""
+
+MATH_PROMPT_RESPONSE_GENERATION = """Provide a step-by-step solution to the given math problem in the language of the problem and write the final answer in a new line.
+
+Note:
+Ensure that all steps of your solution are written in the provided language and conclude by writing the final answer clearly on a new line.
+"""
