@@ -719,14 +719,14 @@ def main(args: ArgumentParserPlus):
         with open(os.path.join(exp_args.output_dir, "metadata.json"), "w") as f:
             json.dump(metadata_blob, f)
 
-        # upload metadata to the dataset if set
-        if exp_args.hf_metadata_dataset:
-            upload_metadata_to_hf(
-                metadata_blob,
-                "metadata.json",
-                exp_args.hf_metadata_dataset,
-                "results/" + exp_args.run_name,  # to match what the auto-evals name as.
-            )
+        # # upload metadata to the dataset if set
+        # if exp_args.hf_metadata_dataset:
+        #     upload_metadata_to_hf(
+        #         metadata_blob,
+        #         "metadata.json",
+        #         exp_args.hf_metadata_dataset,
+        #         "results/" + exp_args.run_name,  # to match what the auto-evals name as.
+        #     )
 
     if exp_args.push_to_hub:
         push_folder_to_hub(
@@ -739,8 +739,6 @@ def main(args: ArgumentParserPlus):
     accelerator.wait_for_everyone()
     if exp_args.with_tracking:
         accelerator.end_training()
-
-        
 
 
 if __name__ == "__main__":

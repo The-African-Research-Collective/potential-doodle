@@ -165,3 +165,5 @@ test.py
 files/*
 llm_data/*
 .DS_Store
+wandb/*
+logs/*
